@@ -87,17 +87,22 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
+// Trust proxy (important for Railway)
+app.set('trust proxy', 1);
+
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'fallback-secret-key-change-this',
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-change-this-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        secure: false,
+        secure: false, // Railway uses reverse proxy, so keep this false
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000,
-        sameSite: 'lax'
+        sameSite: 'lax',
+        path: '/'
     },
-    name: 'sessionId'
+    name: 'sessionId',
+    rolling: true // Refresh session on each request
 }));
 
 // Auth Middleware
@@ -110,27 +115,42 @@ const requireAuth = (req, res, next) => {
 };
 
 const requireAdmin = async (req, res, next) => {
-    console.log('requireAdmin check - Session userId:', req.session.userId);
-    console.log('requireAdmin check - Session userRole:', req.session.userRole);
+    console.log('=== requireAdmin Check ===');
+    console.log('Session ID:', req.sessionID);
+    console.log('Session userId:', req.session.userId);
+    console.log('Session userName:', req.session.userName);
+    console.log('Session userRole:', req.session.userRole);
+    console.log('Request path:', req.path);
+    console.log('Request method:', req.method);
     
     if (!req.session.userId) {
-        console.log('No session userId found, redirecting to login');
+        console.log('❌ No session userId found');
+        
+        // Check if it's an AJAX/API request
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+            return res.status(401).json({ success: false, message: 'Not logged in' });
+        }
         return res.redirect('/login');
     }
     
     try {
         const [users] = await pool.query('SELECT role FROM users WHERE id = ?', [req.session.userId]);
-        console.log('User found in DB:', users.length > 0 ? users[0] : 'none');
+        console.log('Database query result:', users);
         
         if (users.length && (users[0].role === 'admin' || users[0].role === 'manager')) {
-            console.log('Access granted for role:', users[0].role);
+            console.log('✓ Access granted for role:', users[0].role);
             next();
         } else {
-            console.log('Access denied - User role:', users.length > 0 ? users[0].role : 'no user');
-            res.status(403).json({ success: false, message: 'Access denied' });
+            console.log('❌ Access denied - Role:', users.length > 0 ? users[0].role : 'user not found');
+            
+            // Check if it's an AJAX/API request
+            if (req.xhr || req.headers.accept?.includes('application/json')) {
+                return res.status(403).json({ success: false, message: 'Access denied - Admin or Manager role required' });
+            }
+            res.status(403).send('Access denied - Admin or Manager role required');
         }
     } catch (error) {
-        console.error('requireAdmin error:', error);
+        console.error('❌ requireAdmin error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
