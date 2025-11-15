@@ -20,6 +20,66 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
+// Initialize Database Tables
+async function initializeDatabase() {
+    try {
+        console.log('Initializing database...');
+        
+        // Create users table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role ENUM('admin', 'manager', 'user') DEFAULT 'user',
+                status ENUM('active', 'inactive') DEFAULT 'active',
+                created_by INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )
+        `);
+        console.log('✓ Users table ready');
+        
+        // Create activity_logs table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS activity_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                action VARCHAR(255) NOT NULL,
+                details TEXT,
+                ip_address VARCHAR(45),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
+        console.log('✓ Activity logs table ready');
+        
+        // Check if admin exists
+        const [admins] = await pool.query('SELECT * FROM users WHERE email = ?', ['admin@dashboard.com']);
+        
+        if (admins.length === 0) {
+            // Create default admin user
+            const hashedPassword = await bcrypt.hash('Admin@123', 10);
+            await pool.query(
+                'INSERT INTO users (name, email, password, role, status) VALUES (?, ?, ?, ?, ?)',
+                ['System Admin', 'admin@dashboard.com', hashedPassword, 'admin', 'active']
+            );
+            console.log('✓ Default admin user created');
+            console.log('  Email: admin@dashboard.com');
+            console.log('  Password: Admin@123');
+        } else {
+            console.log('✓ Admin user already exists');
+        }
+        
+        console.log('Database initialization complete!');
+    } catch (error) {
+        console.error('Database initialization error:', error);
+        process.exit(1);
+    }
+}
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -33,7 +93,7 @@ app.use(session({
     saveUninitialized: false,
     cookie: { 
         secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        maxAge: 24 * 60 * 60 * 1000
     }
 }));
 
@@ -204,7 +264,12 @@ app.get('/logout', (req, res) => {
     res.redirect('/login');
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+// Initialize database and start server
+initializeDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}).catch(error => {
+    console.error('Failed to initialize:', error);
+    process.exit(1);
 });
