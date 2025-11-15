@@ -107,9 +107,15 @@ app.use(session({
 
 // Auth Middleware
 const requireAuth = (req, res, next) => {
+    console.log('=== requireAuth Check ===');
+    console.log('Session userId:', req.session.userId);
+    console.log('Session data:', req.session);
+    
     if (req.session.userId) {
+        console.log('✓ Auth check passed');
         next();
     } else {
+        console.log('❌ Auth check failed - redirecting to login');
         res.redirect('/login');
     }
 };
@@ -147,7 +153,9 @@ const requireAdmin = async (req, res, next) => {
             if (req.xhr || req.headers.accept?.includes('application/json')) {
                 return res.status(403).json({ success: false, message: 'Access denied - Admin or Manager role required' });
             }
-            res.status(403).send('Access denied - Admin or Manager role required');
+            
+            // Render error page for regular page requests
+            res.status(403).render('error-403');
         }
     } catch (error) {
         console.error('❌ requireAdmin error:', error);
@@ -181,11 +189,26 @@ app.get('/debug-session', (req, res) => {
         session: {
             userId: req.session.userId,
             userName: req.session.userName,
-            userRole: req.session.userRole
+            userRole: req.session.userRole,
+            fullSession: req.session
         },
         sessionID: req.sessionID,
         cookies: req.headers.cookie
     });
+});
+
+// Debug route to check user in database
+app.get('/debug-user', requireAuth, async (req, res) => {
+    try {
+        const [users] = await pool.query('SELECT id, name, email, role, status FROM users WHERE id = ?', [req.session.userId]);
+        res.json({
+            sessionUserId: req.session.userId,
+            databaseUser: users[0] || null,
+            match: users.length > 0
+        });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
 });
 
 app.post('/login', async (req, res) => {
