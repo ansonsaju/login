@@ -110,17 +110,27 @@ const requireAuth = (req, res, next) => {
 };
 
 const requireAdmin = async (req, res, next) => {
+    console.log('requireAdmin check - Session userId:', req.session.userId);
+    console.log('requireAdmin check - Session userRole:', req.session.userRole);
+    
     if (!req.session.userId) {
+        console.log('No session userId found, redirecting to login');
         return res.redirect('/login');
     }
+    
     try {
         const [users] = await pool.query('SELECT role FROM users WHERE id = ?', [req.session.userId]);
+        console.log('User found in DB:', users.length > 0 ? users[0] : 'none');
+        
         if (users.length && (users[0].role === 'admin' || users[0].role === 'manager')) {
+            console.log('Access granted for role:', users[0].role);
             next();
         } else {
+            console.log('Access denied - User role:', users.length > 0 ? users[0].role : 'no user');
             res.status(403).json({ success: false, message: 'Access denied' });
         }
     } catch (error) {
+        console.error('requireAdmin error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 };
@@ -145,6 +155,19 @@ app.get('/login-test', (req, res) => {
     res.render('login-test');
 });
 
+// Debug route to check session
+app.get('/debug-session', (req, res) => {
+    res.json({
+        session: {
+            userId: req.session.userId,
+            userName: req.session.userName,
+            userRole: req.session.userRole
+        },
+        sessionID: req.sessionID,
+        cookies: req.headers.cookie
+    });
+});
+
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
     
@@ -161,7 +184,7 @@ app.post('/login', async (req, res) => {
         }
         
         const user = users[0];
-        console.log('Comparing passwords for user:', user.name);
+        console.log('Comparing passwords for user:', user.name, 'Role:', user.role);
         
         const validPassword = await bcrypt.compare(password, user.password);
         
@@ -171,17 +194,34 @@ app.post('/login', async (req, res) => {
             return res.json({ success: false, message: 'Invalid credentials' });
         }
         
+        // Set session data
         req.session.userId = user.id;
         req.session.userName = user.name;
         req.session.userRole = user.role;
         
-        console.log('Session created for user:', user.name);
+        console.log('Session data set:', {
+            userId: req.session.userId,
+            userName: req.session.userName,
+            userRole: req.session.userRole
+        });
         
-        await pool.query('INSERT INTO activity_logs (user_id, action, ip_address) VALUES (?, ?, ?)', 
-            [user.id, 'Login', req.ip]);
-        
-        console.log('Login successful for:', email);
-        res.json({ success: true, message: 'Login successful' });
+        // Save session before responding
+        req.session.save((err) => {
+            if (err) {
+                console.error('Session save error:', err);
+                return res.json({ success: false, message: 'Session error' });
+            }
+            
+            console.log('Session saved successfully');
+            
+            // Log activity
+            pool.query('INSERT INTO activity_logs (user_id, action, ip_address) VALUES (?, ?, ?)', 
+                [user.id, 'Login', req.ip])
+                .catch(logErr => console.error('Activity log error:', logErr));
+            
+            console.log('Login successful for:', email);
+            res.json({ success: true, message: 'Login successful' });
+        });
     } catch (error) {
         console.error('Login error:', error);
         res.json({ success: false, message: 'Server error' });
