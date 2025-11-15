@@ -88,13 +88,16 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 app.use(session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || 'fallback-secret-key-change-this',
     resave: false,
     saveUninitialized: false,
     cookie: { 
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 24 * 60 * 60 * 1000
-    }
+        secure: false,
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000,
+        sameSite: 'lax'
+    },
+    name: 'sessionId'
 }));
 
 // Auth Middleware
@@ -138,18 +141,31 @@ app.get('/login', (req, res) => {
     res.render('login');
 });
 
+app.get('/login-test', (req, res) => {
+    res.render('login-test');
+});
+
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
+    
+    console.log('Login attempt:', email);
     
     try {
         const [users] = await pool.query('SELECT * FROM users WHERE email = ? AND status = ?', [email, 'active']);
         
+        console.log('Users found:', users.length);
+        
         if (users.length === 0) {
+            console.log('No user found with email:', email);
             return res.json({ success: false, message: 'Invalid credentials' });
         }
         
         const user = users[0];
+        console.log('Comparing passwords for user:', user.name);
+        
         const validPassword = await bcrypt.compare(password, user.password);
+        
+        console.log('Password valid:', validPassword);
         
         if (!validPassword) {
             return res.json({ success: false, message: 'Invalid credentials' });
@@ -159,12 +175,15 @@ app.post('/login', async (req, res) => {
         req.session.userName = user.name;
         req.session.userRole = user.role;
         
+        console.log('Session created for user:', user.name);
+        
         await pool.query('INSERT INTO activity_logs (user_id, action, ip_address) VALUES (?, ?, ?)', 
             [user.id, 'Login', req.ip]);
         
+        console.log('Login successful for:', email);
         res.json({ success: true, message: 'Login successful' });
     } catch (error) {
-        console.error(error);
+        console.error('Login error:', error);
         res.json({ success: false, message: 'Server error' });
     }
 });
