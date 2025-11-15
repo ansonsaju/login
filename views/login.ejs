@@ -29,17 +29,17 @@
             <form id="loginForm" class="login-form">
                 <div class="form-group">
                     <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" required placeholder="Enter your email">
+                    <input type="email" id="email" name="email" required placeholder="Enter your email" autocomplete="email">
                 </div>
                 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required placeholder="Enter your password">
+                    <input type="password" id="password" name="password" required placeholder="Enter your password" autocomplete="current-password">
                 </div>
                 
                 <div id="error-message" class="error-message" style="display: none;"></div>
                 
-                <button type="submit" class="btn-primary">
+                <button type="submit" class="btn-primary" id="submitBtn">
                     <span class="btn-text">Sign In</span>
                     <span class="btn-loader" style="display: none;">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -59,6 +59,117 @@
         </div>
     </div>
 
-    <script src="/js/login.js"></script>
+    <script>
+        console.log('Login script started');
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded');
+            
+            const loginForm = document.getElementById('loginForm');
+            
+            if (!loginForm) {
+                console.error('Login form not found!');
+                return;
+            }
+            
+            console.log('Login form found, attaching event listener');
+            
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                console.log('Form submitted!');
+                
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                const errorMessage = document.getElementById('error-message');
+                const btnText = document.querySelector('.btn-text');
+                const btnLoader = document.querySelector('.btn-loader');
+                const submitBtn = document.getElementById('submitBtn');
+                
+                console.log('Email:', email);
+                console.log('Password length:', password.length);
+                
+                // Show loading state
+                submitBtn.disabled = true;
+                btnText.style.display = 'none';
+                btnLoader.style.display = 'block';
+                errorMessage.style.display = 'none';
+                
+                try {
+                    console.log('Sending request to /login');
+                    
+                    const response = await fetch('/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ email, password }),
+                    });
+                    
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', response.headers);
+                    
+                    const data = await response.json();
+                    console.log('Response data:', data);
+                    
+                    if (data.success) {
+                        console.log('Login successful! Redirecting...');
+                        
+                        // Success animation
+                        submitBtn.style.background = 'linear-gradient(135deg, #48bb78, #38b2ac)';
+                        btnLoader.innerHTML = `
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <polyline points="20 6 9 17 4 12" stroke-width="3"/>
+                            </svg>
+                        `;
+                        
+                        setTimeout(function() {
+                            console.log('Redirecting to dashboard...');
+                            window.location.href = '/dashboard';
+                        }, 500);
+                    } else {
+                        console.error('Login failed:', data.message);
+                        
+                        // Show error
+                        errorMessage.textContent = data.message || 'Login failed';
+                        errorMessage.style.display = 'block';
+                        
+                        // Reset button
+                        submitBtn.disabled = false;
+                        btnText.style.display = 'block';
+                        btnLoader.style.display = 'none';
+                        
+                        // Shake animation
+                        submitBtn.style.animation = 'shake 0.5s';
+                        setTimeout(function() {
+                            submitBtn.style.animation = '';
+                        }, 500);
+                    }
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    
+                    errorMessage.textContent = 'Connection error: ' + error.message;
+                    errorMessage.style.display = 'block';
+                    
+                    submitBtn.disabled = false;
+                    btnText.style.display = 'block';
+                    btnLoader.style.display = 'none';
+                }
+            });
+            
+            console.log('Event listener attached successfully');
+        });
+        
+        // Shake animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-10px); }
+                75% { transform: translateX(10px); }
+            }
+        `;
+        document.head.appendChild(style);
+    </script>
 </body>
 </html>
